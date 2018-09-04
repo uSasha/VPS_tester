@@ -6,5 +6,10 @@ __pycache__/
 *.so
 
 # IDEs
-.idea/
+.idea
 .project
+.ipynb_checkpoints
+
+# secrets
+secret.pkl
+*id_rsa*
