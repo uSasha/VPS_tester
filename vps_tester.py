@@ -1,8 +1,15 @@
+import logging
+import time
+
 import paramiko
 from hetznercloud import HetznerActionException
 from hetznercloud import HetznerCloudClient
 from hetznercloud import HetznerCloudClientConfiguration
 from hetznercloud import constants
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.DEBUG)
+logger = logging.getLogger('vps_test')
 
 
 class HetznerTester:
@@ -34,17 +41,19 @@ class HetznerTester:
                                                                  ssh_keys=[self.key_pub.name],
                                                                  )
             server.wait_until_status_is(constants.SERVER_STATUS_RUNNING)
-        except HetznerActionException:
+        except Exception as e:
+            logger.error(e)
             server = self.create_server(vps_type, datacenter)
 
         return server
 
-    def delete_server(self, server):
+    @staticmethod
+    def delete_server(server):
         try:
             action = server.delete()
             action.wait_until_status_is(constants.ACTION_STATUS_SUCCESS)
         except HetznerActionException:
-            print(f'no such server with name {server.name} and id {server.id}')
+            logger.warning(f'no such server with name {server.name} and id {server.id}')
 
     def run_ssh_command(self, server, command, print_errors=False):
         ssh = paramiko.SSHClient()
@@ -54,7 +63,7 @@ class HetznerTester:
 
         e = ssh_stderr.read()
         if print_errors and len(e):
-            print(f'error: {e}')
+            logger.warning(e)
 
         result = ssh_stdout.read()
         ssh.close()
@@ -63,10 +72,26 @@ class HetznerTester:
     def test_vps(self, datacenter, vps_type, kill_instantly=True):
         server = self.create_server(vps_type, datacenter)
         ip = server.public_net_ipv4
-        self.run_ssh_command(ip, 'apt install docker.io', print_errors=True)
-        t = self.run_ssh_command(ip, 'docker run usasha/vps_test', print_errors=True)
+        logger.debug('server created, going to sleep 30 seconds')
+        time.sleep(30)
+        logger.debug('woke up')
+        self.run_ssh_command(ip,
+                             '''
+                             apt-get update \
+                             && apt-get install docker.io -y \
+                             ''',
+                             print_errors=True,
+                             )
+        t = self.run_ssh_command(ip, 'docker run usasha/vps_test', print_errors=False)
+        logger.debug('test complete')
         if kill_instantly:
             self.delete_server(server)
             server = None
+            logger.debug('server deleted')
 
-        return int(t), server
+        try:
+            t = int(t)
+        except ValueError:
+            pass
+
+        return t, server
